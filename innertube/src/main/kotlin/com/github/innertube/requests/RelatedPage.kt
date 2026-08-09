@@ -27,14 +27,15 @@ suspend fun Innertube.relatedPage(videoId: String) = runCatchingNonCancellable {
         ?.watchNextTabbedResultsRenderer
         ?.tabs
 
-    // Explicitly find the tab titled "Related" or fallback to index 2 / last tab
-    val relatedTab = tabs?.find { 
-        it.tabRenderer?.title?.runs?.any { run -> 
-            run.text.equals("Related", ignoreCase = true) || run.text.contains("related", ignoreCase = true)
-        } == true 
-    }?.tabRenderer ?: tabs?.getOrNull(2)?.tabRenderer ?: tabs?.lastOrNull()?.tabRenderer
-
-    val browseId = relatedTab?.endpoint?.browseEndpoint?.browseId 
+    // Safely target the Related tab without relying on unresolved title.runs
+    val browseId = tabs
+        ?.mapNotNull { it.tabRenderer }
+        ?.firstOrNull { tab ->
+            tab.endpoint?.browseEndpoint?.browseId?.startsWith("FVC") == true ||
+            tab.endpoint?.browseEndpoint?.browseId?.startsWith("VL") == true ||
+            tab.endpoint?.browseEndpoint?.browseId?.contains("related") == true
+        }?.endpoint?.browseEndpoint?.browseId
+        ?: tabs?.getOrNull(2)?.tabRenderer?.endpoint?.browseEndpoint?.browseId
         ?: return@runCatchingNonCancellable null
 
     val response = client.post(BROWSE) {
@@ -44,7 +45,6 @@ suspend fun Innertube.relatedPage(videoId: String) = runCatchingNonCancellable {
                 browseId = browseId
             )
         )
-        // Removed restrictive field mask to prevent stripping updated YouTube schemas
     }.body<BrowseResponse>()
 
     val sectionListRenderer = response
