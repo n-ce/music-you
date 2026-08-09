@@ -20,7 +20,6 @@ suspend fun Innertube.relatedPage(videoId: String) = runCatchingNonCancellable {
         mask("contents.singleColumnMusicWatchNextResultsRenderer.tabbedRenderer.watchNextTabbedResultsRenderer.tabs.tabRenderer(endpoint,title)")
     }.body<NextResponse>()
 
-    // Find the tab containing a browseEndpoint dynamically instead of hardcoding getOrNull(2)
     val tabs = nextResponse
         .contents
         ?.singleColumnMusicWatchNextResultsRenderer
@@ -28,9 +27,15 @@ suspend fun Innertube.relatedPage(videoId: String) = runCatchingNonCancellable {
         ?.watchNextTabbedResultsRenderer
         ?.tabs
 
-    val browseId = tabs?.firstNotNullOfOrNull { 
-        it.tabRenderer?.endpoint?.browseEndpoint?.browseId 
-    } ?: return@runCatchingNonCancellable null
+    // Explicitly find the tab titled "Related" or fallback to index 2 / last tab
+    val relatedTab = tabs?.find { 
+        it.tabRenderer?.title?.runs?.any { run -> 
+            run.text.equals("Related", ignoreCase = true) || run.text.contains("related", ignoreCase = true)
+        } == true 
+    }?.tabRenderer ?: tabs?.getOrNull(2)?.tabRenderer ?: tabs?.lastOrNull()?.tabRenderer
+
+    val browseId = relatedTab?.endpoint?.browseEndpoint?.browseId 
+        ?: return@runCatchingNonCancellable null
 
     val response = client.post(BROWSE) {
         setBody(
@@ -39,14 +44,13 @@ suspend fun Innertube.relatedPage(videoId: String) = runCatchingNonCancellable {
                 browseId = browseId
             )
         )
-        mask("contents.sectionListRenderer.contents.musicCarouselShelfRenderer(header.musicCarouselShelfBasicHeaderRenderer(title,strapline),contents($MUSIC_RESPONSIVE_LIST_ITEM_RENDERER_MASK,$MUSIC_TWO_ROW_ITEM_RENDERER_MASK))")
+        // Removed restrictive field mask to prevent stripping updated YouTube schemas
     }.body<BrowseResponse>()
 
     val sectionListRenderer = response
         .contents
         ?.sectionListRenderer
 
-    // Fallback across YouTube's updated/localized section headers
     val songSection = sectionListRenderer?.findSectionByTitle("You might also like")
         ?: sectionListRenderer?.findSectionByTitle("Quick picks")
         ?: sectionListRenderer?.findSectionByTitle("Quick picks for you")
