@@ -20,18 +20,17 @@ suspend fun Innertube.relatedPage(videoId: String) = runCatchingNonCancellable {
         mask("contents.singleColumnMusicWatchNextResultsRenderer.tabbedRenderer.watchNextTabbedResultsRenderer.tabs.tabRenderer(endpoint,title)")
     }.body<NextResponse>()
 
-    val browseId = nextResponse
+    // Find the tab containing a browseEndpoint dynamically instead of hardcoding getOrNull(2)
+    val tabs = nextResponse
         .contents
         ?.singleColumnMusicWatchNextResultsRenderer
         ?.tabbedRenderer
         ?.watchNextTabbedResultsRenderer
         ?.tabs
-        ?.getOrNull(2)
-        ?.tabRenderer
-        ?.endpoint
-        ?.browseEndpoint
-        ?.browseId
-        ?: return@runCatchingNonCancellable null
+
+    val browseId = tabs?.firstNotNullOfOrNull { 
+        it.tabRenderer?.endpoint?.browseEndpoint?.browseId 
+    } ?: return@runCatchingNonCancellable null
 
     val response = client.post(BROWSE) {
         setBody(
@@ -47,15 +46,20 @@ suspend fun Innertube.relatedPage(videoId: String) = runCatchingNonCancellable {
         .contents
         ?.sectionListRenderer
 
+    // Fallback across YouTube's updated/localized section headers
+    val songSection = sectionListRenderer?.findSectionByTitle("You might also like")
+        ?: sectionListRenderer?.findSectionByTitle("Quick picks")
+        ?: sectionListRenderer?.findSectionByTitle("Quick picks for you")
+        ?: sectionListRenderer?.contents?.firstOrNull()
+
     Innertube.RelatedPage(
-        songs = sectionListRenderer
-            ?.findSectionByTitle("You might also like")
+        songs = songSection
             ?.musicCarouselShelfRenderer
             ?.contents
             ?.mapNotNull(MusicCarouselShelfRenderer.Content::musicResponsiveListItemRenderer)
             ?.mapNotNull(Innertube.SongItem::from),
-        playlists = sectionListRenderer
-            ?.findSectionByTitle("Recommended playlists")
+        playlists = (sectionListRenderer?.findSectionByTitle("Recommended playlists")
+            ?: sectionListRenderer?.findSectionByTitle("Playlists for you"))
             ?.musicCarouselShelfRenderer
             ?.contents
             ?.mapNotNull(MusicCarouselShelfRenderer.Content::musicTwoRowItemRenderer)
@@ -67,8 +71,8 @@ suspend fun Innertube.relatedPage(videoId: String) = runCatchingNonCancellable {
             ?.contents
             ?.mapNotNull(MusicCarouselShelfRenderer.Content::musicTwoRowItemRenderer)
             ?.mapNotNull(Innertube.AlbumItem::from),
-        artists = sectionListRenderer
-            ?.findSectionByTitle("Similar artists")
+        artists = (sectionListRenderer?.findSectionByTitle("Similar artists")
+            ?: sectionListRenderer?.findSectionByTitle("Fans also like"))
             ?.musicCarouselShelfRenderer
             ?.contents
             ?.mapNotNull(MusicCarouselShelfRenderer.Content::musicTwoRowItemRenderer)
